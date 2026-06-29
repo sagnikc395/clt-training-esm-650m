@@ -1,0 +1,2 @@
+#!/bin/bash
+uv run torchrun --nproc_per_node gpu -m scripts.benchmarks.distributed

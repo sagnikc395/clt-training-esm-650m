@@ -1,0 +1,91 @@
+#!/bin/bash
+set -e
+PORT=$RANDOM
+PORT=$((PORT + 1000))
+
+BS=$4
+LR=$5
+if [ -z "$BS" ]; then
+    BS=8
+fi
+if [ -z "$LR" ]; then
+    LR=2e-4
+fi
+CONFIG=$1
+EF=$2
+K=$3
+
+# OPTIM_ARGS="--optimizer muon --lr $LR --lr_warmup_steps 50 --batch_size=$BS"
+OPTIM_ARGS="--optimizer adam --lr $LR --lr_warmup_steps 50 --batch_size=$BS"
+AFFINE="--post_encoder_scale=True --train_post_encoder=True"
+SKIP="--skip_connection=True"
+NAME=
+LLAMA_IN_HOOKPOINTS="layers.0.pre_feedforward_layernorm layers.1.pre_feedforward_layernorm layers.2.pre_feedforward_layernorm layers.3.pre_feedforward_layernorm layers.4.pre_feedforward_layernorm layers.5.pre_feedforward_layernorm layers.6.pre_feedforward_layernorm layers.7.pre_feedforward_layernorm layers.8.pre_feedforward_layernorm layers.9.pre_feedforward_layernorm layers.10.pre_feedforward_layernorm layers.11.pre_feedforward_layernorm layers.12.pre_feedforward_layernorm layers.13.pre_feedforward_layernorm layers.14.pre_feedforward_layernorm layers.15.pre_feedforward_layernorm layers.16.pre_feedforward_layernorm layers.17.pre_feedforward_layernorm layers.18.pre_feedforward_layernorm layers.19.pre_feedforward_layernorm layers.20.pre_feedforward_layernorm layers.21.pre_feedforward_layernorm layers.22.pre_feedforward_layernorm layers.23.pre_feedforward_layernorm layers.24.pre_feedforward_layernorm layers.25.pre_feedforward_layernorm"
+IN_HOOKPOINTS=
+if [ -z "$CONFIG" ]; then
+    CONFIG=tied
+fi
+if [ "$CONFIG" == "none" ]; then
+    CROSSING=""
+elif [ "$CONFIG" == "none-pre" ]; then
+    CROSSING="--cross_layer=16 --coalesce_topk=concat --topk_coalesced=False" AFFINE=""
+    IN_HOOKPOINTS="--hookpoints_in $LLAMA_IN_HOOKPOINTS"
+elif [ "$CONFIG" == "noskip-pre" ]; then
+    CROSSING="--cross_layer=16 --coalesce_topk=concat --topk_coalesced=False" AFFINE="" SKIP=""
+    IN_HOOKPOINTS="--hookpoints_in $LLAMA_IN_HOOKPOINTS"
+elif [ "$CONFIG" == "tied" ]; then
+    CROSSING="--cross_layer=16 --coalesce_topk=concat --topk_coalesced=False"
+elif [ "$CONFIG" == "tied-pre" ]; then
+    CROSSING="--cross_layer=16 --coalesce_topk=concat --topk_coalesced=False"
+    IN_HOOKPOINTS="--hookpoints_in $LLAMA_IN_HOOKPOINTS"
+elif [ "$CONFIG" == "cross" ]; then
+    CROSSING="--cross_layer=4"
+elif [ "$CONFIG" == "cross16" ]; then
+    CROSSING="--cross_layer=16"
+elif [ "$CONFIG" == "no-skip" ]; then
+    SKIP="" CROSSING=""
+else
+    echo "Invalid option: $CONFIG"
+    exit 1
+fi
+NAME=${CONFIG}
+
+if [ -z "$EF" ]; then
+    EF=64
+fi
+NAME=${NAME}_ef${EF}
+if [ -z "$K" ]; then
+    K=16
+fi
+NAME=${NAME}_k${K}
+
+NAME=${NAME}_bs${BS}_lr${LR}
+
+SAVE_ARGS="--save_every 100000000000"
+if [ -z "$DONT_SAVE" ]; then
+    SAVE_ARGS=""
+fi
+
+N_DEVICE_CHARS=${#CUDA_VISIBLE_DEVICES}
+N_DEVICES=$(( ($N_DEVICE_CHARS + 1) / 2 ))
+echo "Using $N_DEVICES devices"
+
+OPTIMIZER=adam8 \
+WANDB_ENTITY=eleutherai uv run torchrun --master_port $PORT --nproc_per_node gpu -m sparsify \
+google/gemma-3-1b-pt --ctx_len 128 \
+--transcode=True $SKIP \
+--expansion_factor=$EF --k=$K --tp=$N_DEVICES \
+$IN_HOOKPOINTS \
+--hookpoints layers.0.post_feedforward_layernorm layers.1.post_feedforward_layernorm layers.2.post_feedforward_layernorm layers.3.post_feedforward_layernorm layers.4.post_feedforward_layernorm layers.5.post_feedforward_layernorm layers.6.post_feedforward_layernorm layers.7.post_feedforward_layernorm layers.8.post_feedforward_layernorm layers.9.post_feedforward_layernorm layers.10.post_feedforward_layernorm layers.11.post_feedforward_layernorm \
+layers.12.post_feedforward_layernorm layers.13.post_feedforward_layernorm layers.14.post_feedforward_layernorm layers.15.post_feedforward_layernorm \
+layers.16.post_feedforward_layernorm layers.17.post_feedforward_layernorm layers.18.post_feedforward_layernorm layers.19.post_feedforward_layernorm \
+layers.20.post_feedforward_layernorm layers.21.post_feedforward_layernorm layers.22.post_feedforward_layernorm layers.23.post_feedforward_layernorm \
+layers.24.post_feedforward_layernorm layers.25.post_feedforward_layernorm \
+--filter_bos True --remove_first_token True \
+$CROSSING \
+$AFFINE --normalize_io=True \
+--run_name gemma3-sweep/$NAME \
+$SAVE_ARGS \
+$OPTIM_ARGS \
+$extra
+# --dtype bfloat16
