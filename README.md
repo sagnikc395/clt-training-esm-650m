@@ -1,4 +1,4 @@
-# clt-training
+# clt-training-esm-650m
 
 This repo is a fork of [sparsify](https://github.com/eleutherai/sparsify). It adds support for training [cross-layer transcoders](https://transformer-circuits.pub/2024/crosscoders/index.html) (CLTs). Other changes include:
 - Tensor parallelism with DTensor
