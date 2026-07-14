@@ -1,0 +1,209 @@
+<title>CLTs for Protein Language Models — Progress & Directions</title>
+<style>
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%}
+  body{background:#000; color:#fff; font-family:Arial,Helvetica,sans-serif; overflow:hidden}
+  .deck{position:fixed; inset:0}
+  .slide{
+    position:absolute; inset:0;
+    padding:6vmin 8vmin;
+    display:none; flex-direction:column; gap:3vmin;
+    justify-content:flex-start;
+  }
+  .slide.active{display:flex}
+  .slide.center{justify-content:center}
+
+  h1{font-size:6vmin; line-height:1.1; font-weight:bold}
+  h2{font-size:4vmin; line-height:1.15; font-weight:bold}
+  h3{font-size:2.6vmin; font-weight:bold; margin-bottom:1vmin}
+  p{font-size:2.4vmin; line-height:1.5; max-width:70ch}
+  .sub{font-size:3vmin; line-height:1.4}
+  .small{font-size:2vmin; line-height:1.5}
+  .label{font-size:2vmin; letter-spacing:.15em; text-transform:uppercase; margin-bottom:1vmin}
+
+  ul{list-style:none; display:flex; flex-direction:column; gap:1.8vmin}
+  li{font-size:2.4vmin; line-height:1.4; padding-left:3vmin; position:relative; max-width:80ch}
+  li::before{content:"-"; position:absolute; left:0}
+  li ul{margin-top:1.2vmin}
+  li li{font-size:2.1vmin}
+
+  .two{display:grid; grid-template-columns:1fr 1fr; gap:6vmin}
+
+  table{border-collapse:collapse; width:100%; font-size:2.1vmin}
+  th,td{text-align:left; padding:1.4vmin 1.6vmin; border-bottom:1px solid #fff; vertical-align:top}
+  th{font-weight:bold}
+
+  pre{font-family:"Courier New",monospace; font-size:2vmin; line-height:1.5; white-space:pre; overflow:auto}
+
+  .counter{position:fixed; bottom:2.5vmin; right:3vmin; font-size:1.8vmin}
+  .title-meta{font-size:2.4vmin; line-height:1.8; margin-top:2vmin}
+  .nav{position:fixed; bottom:2vmin; left:3vmin; display:flex; gap:1vmin}
+  .nav button{font-family:monospace; font-size:2vmin; color:#fff; background:#000; border:1px solid #fff; width:4vmin; height:4vmin; cursor:pointer}
+  .nav button:focus-visible{outline:2px solid #fff; outline-offset:2px}
+</style>
+
+<div class="deck" id="deck">
+
+  <!-- 1 TITLE -->
+  <section class="slide center">
+    <div class="label">SAGE Lab · Mechanistic Interpretability</div>
+    <h1>Cross-Layer Transcoders for Protein Language Models</h1>
+    <p class="sub">Scaling sparse circuit tracing to ESM-2 650M for zero-shot mutation effect prediction.</p>
+    <div class="title-meta">
+      Sagnik Chatterjee — Graduate Student Researcher, SAGE Lab<br>
+      Advisors: Saishradha Mohanty, Anna Green · University of Massachusetts Amherst<br>
+      Progress &amp; future directions · 2026
+    </div>
+  </section>
+
+  <!-- 2 INTRODUCTION / ABOUT ME -->
+  <section class="slide">
+    <div class="label">Introduction</div>
+    <h2>About me</h2>
+    <ul>
+      <li>MS in Computer Science, University of Massachusetts Amherst (2025–2027). BE in Computer Science, Manipal Institute of Technology.</li>
+      <li>Currently a Graduate Student Researcher in the <b>SAGE Lab</b> (May 2026–present), working on mechanistic interpretability for protein language models.</li>
+      <li>Prior research at UMass: <b>CIIR Lab</b> (typed recursive-agent frameworks over LiteLLM) and <b>BioNLP Lab</b> (LoRA fine-tuning of LLaMA-3 on biomedical ontologies, +6.25pp on USMLE).</li>
+      <li>Three 2026 preprints spanning small-LM reasoning, continual tool-use, and biological sequence representation (SCOPE operon embeddings).</li>
+      <li>Three years as a Backend &amp; Integration engineer at <b>IBM</b> — distributed systems, Kafka event pipelines, and observability at scale.</li>
+    </ul>
+  </section>
+
+  <!-- 3 THIS PROJECT -->
+  <section class="slide">
+    <div class="label">The Project</div>
+    <h2>What I am building in the SAGE Lab</h2>
+    <ul>
+      <li>Building a <b>cross-layer transcoder (CLT)</b> for ESM2-650M to perform unsupervised <b>zero-shot mutation effect prediction</b>.</li>
+      <li>Extending mechanistic interpretability techniques — used on language models — to protein language models at scale.</li>
+      <li>Constructing <b>biological circuits</b> from sparse CLT features to test whether ESM2-650M encodes structurally and evolutionarily meaningful representations when reasoning about mutations.</li>
+      <li>Codebase is a fork of EleutherAI's <b>sparsify</b>, extended with CLT support, tensor parallelism, bfloat16 training, and KL+FVU loss.</li>
+    </ul>
+  </section>
+
+  <!-- 4 WHY -->
+  <section class="slide">
+    <div class="label">Motivation</div>
+    <h2>Why mechanistic interpretability for proteins?</h2>
+    <ul>
+      <li>ESM-2 predicts structure and function from sequence and underpins much of modern computational biology — but <b>how</b> it computes contacts, folds, and functional sites is opaque.</li>
+      <li>Extracting <b>causal circuits</b> yields scientific hypotheses about protein biology, not just predictions — e.g. "a catalytic-motif feature at layer 6 gates a domain-recognition feature at layer 20."</li>
+      <li>Two recent results define the frontier: Nainani et al. 2025 (SAE latents causally mediate contact prediction) and ProtoMech 2026 (CLTs recover 82–89% of performance at ESM2-8M/35M).</li>
+      <li><b>The gap:</b> nobody has trained CLTs at 650M — rich enough to matter biologically, but the training cost explodes. That is this project.</li>
+    </ul>
+  </section>
+
+  <!-- 5 METHOD -->
+  <section class="slide">
+    <div class="label">Method</div>
+    <h2>SAE to Transcoder to Cross-Layer Transcoder</h2>
+    <pre>                 reads          predicts (reconstructs)
+  SAE            act at L    ->   same act at L
+  Transcoder     input of L  ->   OUTPUT of L
+  CLT (mine)     input of L  ->   outputs of L, L+1, ..., L+N</pre>
+    <ul>
+      <li>Real biological computation flows <b>across</b> layers. A CLT encoder fires once at layer L and its decoder emits into every downstream target — so the learned dictionary is the cross-layer wiring.</li>
+      <li>TopK activation (Gao 2024) fires exactly k latents per token, no L1 tuning. Expansion 128 x d_model 1280 gives 163,840 latents per layer.</li>
+    </ul>
+  </section>
+
+  <!-- 6 PROGRESS -->
+  <section class="slide">
+    <div class="label">Progress</div>
+    <h2>Progress till now — what runs today</h2>
+    <ul>
+      <li><b>ESM-2 650M integrated</b> into the sparsify pipeline: CLS-token handling, no-BOS, hookpoints before layernorm.</li>
+      <li><b>Cross-layer transcoder training working</b> with configurable reach and four coalescing strategies (none, concat, per-layer, group).</li>
+      <li><b>KL + FVU training</b> implemented — reconstruct well and stay faithful to ESM-2's computation.</li>
+      <li><b>Tensor parallelism</b> via DTensor plus bfloat16 for weights that exceed a single GPU.</li>
+      <li><b>Sweep analysis</b> ranking W&amp;B runs by FVU, replacement-CE increase, L0, and dead-latent percentage.</li>
+      <li><b>Current focus (Objective 1):</b> making 650M CLT training fast and memory-tractable so the recipe can scale.</li>
+    </ul>
+  </section>
+
+  <!-- 7 BOTTLENECKS -->
+  <section class="slide">
+    <div class="label">The Hard Problem</div>
+    <h2>Why is 650M CLT training slow?</h2>
+    <table>
+      <tr><th>Bottleneck</th><th>What happens</th></tr>
+      <tr><td>1. No activation caching</td><td>Full frozen ESM-2 650M forward pass every step (two passes for KL-FVU); every sweep re-runs ESM-2 from scratch.</td></tr>
+      <tr><td>2. Enormous CLT size</td><td>At EF=128, cross_layer=12: about 89B params across 33 layers — larger than ESM-2 itself, ~121x the 35M recipe.</td></tr>
+      <tr><td>3. Scale and comms</td><td>TopK over 163,840 latents x 32K tokens; DTensor all-gather each layer; custom backward blocks torch.compile.</td></tr>
+    </table>
+  </section>
+
+  <!-- 8 ROADMAP -->
+  <section class="slide">
+    <div class="label">Future — Efficiency</div>
+    <h2>Efficiency roadmap (impact to effort)</h2>
+    <ul>
+      <li><b>Profile first</b> — torch.profiler / nsys to split time between ESM-2 forward and CLT before changing anything.</li>
+      <li><b>Activation caching</b> — precompute and memory-map ESM-2 activations; expected 3–10x speedup, sweeps become near-free.</li>
+      <li><b>Shrink the CLT</b> — start EF=32, cross_layer=4–6, layer_stride=2; reproduce ProtoMech-quality at reduced scale first.</li>
+      <li><b>LoRA-style factorization</b> — shared base dictionary plus small per-target low-rank decoder adapters; low-rank encoder.</li>
+      <li><b>Loop-level wins</b> — torch.compile coverage, 8-bit Adam, activation checkpointing, TP comms overlap.</li>
+    </ul>
+  </section>
+
+  <!-- 9 TARGETS -->
+  <section class="slide">
+    <div class="label">Targets</div>
+    <h2>What "tractable at 650M" means, measured</h2>
+    <table>
+      <tr><th>Metric</th><th>Target</th><th>Meaning</th></tr>
+      <tr><td>val mean FVU</td><td>&lt; 0.05</td><td>reconstruction quality</td></tr>
+      <tr><td>replacement CE increase</td><td>&lt; 0.1 nats</td><td>faithfulness to ESM-2</td></tr>
+      <tr><td>dead latents</td><td>&lt; 5%</td><td>dictionary utilization</td></tr>
+      <tr><td>memory / throughput</td><td>&lt; 40 GB/GPU, 3–10x</td><td>cheap enough to sweep</td></tr>
+    </table>
+  </section>
+
+  <!-- 10 BIOLOGY -->
+  <section class="slide">
+    <div class="label">Future — The Science</div>
+    <h2>Then: go after the biology</h2>
+    <ul>
+      <li><b>Reproduce and sharpen</b> Nainani's motif to domain contact circuit with CLTs (which model actual cross-layer wiring) via activation patching.</li>
+      <li><b>Circuit discovery at 650M</b> — ProtoMech-style greedy latent selection plus integrated gradients. Do larger models use the same circuits at higher resolution?</li>
+      <li><b>Causal validation</b> — ProteinGym: test whether circuit-relevant CLT features alone predict mutation effects.</li>
+      <li><b>Scale out</b> — carry the optimized pipeline to ESM-C 3B–6B, the target that makes the efficiency work worth doing now.</li>
+    </ul>
+  </section>
+
+  <!-- 11 CLOSE -->
+  <section class="slide center">
+    <div class="label">Summary</div>
+    <h1>Training works. Now make it scale.</h1>
+    <ul style="margin-top:2vmin">
+      <li><b>Done:</b> CLT + KL-FVU + tensor-parallel training running on ESM-2 650M.</li>
+      <li><b>Now:</b> profile, cache activations, shrink and factorize the CLT to hit the target gates.</li>
+      <li><b>Next:</b> motif-to-domain circuits at 650M, ProteinGym validation, scale to ESM-C 3B–6B.</li>
+    </ul>
+  </section>
+
+</div>
+
+<div class="counter" id="counter"></div>
+<div class="nav">
+  <button id="prev" aria-label="Previous slide">&lt;</button>
+  <button id="next" aria-label="Next slide">&gt;</button>
+</div>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0;
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    document.getElementById('counter').textContent=(i+1)+' / '+slides.length;
+  }
+  document.getElementById('next').onclick=()=>show(i+1);
+  document.getElementById('prev').onclick=()=>show(i-1);
+  addEventListener('keydown',e=>{
+    if(['ArrowRight','ArrowDown',' ','PageDown'].includes(e.key)){e.preventDefault();show(i+1);}
+    if(['ArrowLeft','ArrowUp','PageUp'].includes(e.key)){e.preventDefault();show(i-1);}
+    if(e.key==='Home')show(0); if(e.key==='End')show(slides.length-1);
+  });
+  show(0);
+</script>
